@@ -2,11 +2,11 @@
     "config": {
         "wifi-ssid": {
             "help": "WiFi SSID",
-            "value": "\"LERNKUBE\""
+            "value": "\"Sunrise_2.4GHz_20748B\""
         },
         "wifi-password": {
             "help": "WiFi Password",
-            "value": "\"l3rnk4b3\""
+            "value": "\"jt6SMX2m1x1x\""
         }
     },    
     "target_overrides": {

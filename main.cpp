@@ -1,6 +1,8 @@
 /** Beispiel Abfrage Cloud Dienst Sunrise / Sunset
  */
 #include "mbed.h"
+#include <cstdint>
+#include <cstdio>
 #include <string>
 #include "OLEDDisplay.h"
 #include "http_request.h"
@@ -8,16 +10,11 @@
 
 // UI
 OLEDDisplay oled( MBED_CONF_IOTKIT_OLED_RST, MBED_CONF_IOTKIT_OLED_SDA, MBED_CONF_IOTKIT_OLED_SCL );
-// I/O Buffer
-char message[6000];
-
-DigitalOut myled( MBED_CONF_IOTKIT_LED1 );
 
 int main()
 {
     oled.clear();
     
-    oled.printf("Sunrise Sunset\n");
     // Connect to the network with the default networking interface
     // if you use WiFi: see mbed_app.json for the credentials
     WiFiInterface* network = WiFiInterface::get_default_instance();
@@ -40,10 +37,11 @@ int main()
 
     while( 1 )
     {
-        myled = 1;
         // By default the body is automatically parsed and stored in a buffer, this is memory heavy.
         // To receive chunked response, pass in a callback as last parameter to the constructor.
-        HttpRequest* get_req = new HttpRequest(network, HTTP_GET, "http://api.sunrise-sunset.org/json?lat=47.3686498&lng=8.5391825");
+        HttpRequest* get_req = new HttpRequest(network, HTTP_GET, "http://38a685d92582.ngrok.io/test");
+
+        const char body[] = "{\"integer\": 123}";
 
         HttpResponse* get_res = get_req->send();
         // OK
@@ -52,12 +50,18 @@ int main()
             MbedJSONValue parser;
             // HTTP GET (JSON) parsen  
             parse( parser, get_res->get_body_as_string().c_str() );
-            
-            std::string sunrise;
+            std::string data = parser["message"].get<std::string>();
+
+            oled.printf("%s", data.c_str());
+            printf("%s", data.c_str());
+            printf(data.c_str());
+
+            /*std::string sunrise;
             std::string sunset;            
             
             sunrise = parser["results"]["sunrise"].get<std::string>();
             sunset  = parser["results"]["sunset"] .get<std::string>(); 
+            data = parser["results"]["data"].get<int>();
             
             // Umwandlung nach int. Damit die Zeiten besser verglichen werden können.
             int rh, rm, rs, sh, sm, ss;
@@ -66,6 +70,7 @@ int main()
             
             oled.cursor( 1, 0 );
             oled.printf( "auf   %02d.%02d.%02d\nunter %02d.%02d.%02d\n", rh+2, rm, rs, sh+2+12, sm, ss );
+            */
         }
         // Error
         else
@@ -74,7 +79,6 @@ int main()
             return 1;
         }
         delete get_req;
-        myled = 0;
 
         thread_sleep_for( 10000 );
     }

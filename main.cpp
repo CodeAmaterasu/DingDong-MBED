@@ -8,6 +8,11 @@
 #include "http_request.h"
 #include "MbedJSONValue.h"
 
+#define WIFI_SSID "LERNKUBE"
+
+
+#define WIFI_PASSWORD "l3rnk4b3"
+
 // UI
 OLEDDisplay oled( MBED_CONF_IOTKIT_OLED_RST, MBED_CONF_IOTKIT_OLED_SDA, MBED_CONF_IOTKIT_OLED_SCL );
 
@@ -24,7 +29,7 @@ int main()
     }
 
     printf("\nConnecting to %s...\n", MBED_CONF_APP_WIFI_SSID);
-    int ret = network->connect("LERNKUBE", "l3rnk4b3", NSAPI_SECURITY_WPA_WPA2);
+    int ret = network->connect(WIFI_SSID, WIFI_PASSWORD, NSAPI_SECURITY_WPA_WPA2);
     if (ret != 0) {
         printf("\nConnection error: %d\n", ret);
         return -1;
@@ -36,30 +41,30 @@ int main()
     printf("IP: %s\n", a.get_ip_address());    
 
     // By default the body is automatically parsed and stored in a buffer, this is memory heavy.
-        // To receive chunked response, pass in a callback as last parameter to the constructor.
-        HttpRequest* get_req = new HttpRequest(network, HTTP_GET, "http://192.168.101.17:5000/test");
+    // To receive chunked response, pass in a callback as last parameter to the constructor.
+    HttpRequest* get_req = new HttpRequest(network, HTTP_GET, "http://192.168.101.17:5000/test");
 
-        HttpResponse* get_res = get_req->send();
-        // OK
-        if ( get_res )
-        {
-            MbedJSONValue parser;
-            // HTTP GET (JSON) parsen  
-            parse( parser, get_res->get_body_as_string().c_str() );
-            std::string data = parser["message"].get<std::string>();
+    HttpResponse* get_res = get_req->send();
+    // OK
+    if ( get_res )
+    {
+        MbedJSONValue parser;
+        // HTTP GET (JSON) parsen  
+        parse( parser, get_res->get_body_as_string().c_str() );
+        std::string data = parser["message"].get<std::string>();
 
-            oled.printf("%s", data.c_str());
-            printf("%s", data.c_str());
+        oled.printf("%s", data.c_str());
+        printf("%s", data.c_str());
 
-            thread_sleep_for(1000);
+        thread_sleep_for(1000);
 
-        }
-        // Error
-        else
-        {
-            printf("HttpRequest failed (error code %d)\n", get_req->get_error());
-            return 1;
-        }
-        delete get_req;
+    }
+    // Error
+    else
+    {
+        printf("HttpRequest failed (error code %d)\n", get_req->get_error());
+        return 1;
+    }
+    delete get_req;
 
 }

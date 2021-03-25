@@ -7,6 +7,7 @@
 #include "OLEDDisplay.h"
 #include "http_request.h"
 #include "MbedJSONValue.h"
+#include "Rfid.h"
 
 #define WIFI_SSID "LERNKUBE"
 
@@ -34,12 +35,14 @@ int main()
         printf("\nConnection error: %d\n", ret);
         return -1;
     }
+
     printf("Success\n\n");
     printf("MAC: %s\n", network->get_mac_address());
     SocketAddress a;
     network->get_ip_address(&a);
     printf("IP: %s\n", a.get_ip_address());    
-
+    Rfid rfid = Rfid();
+    rfid.readData();
     // By default the body is automatically parsed and stored in a buffer, this is memory heavy.
     // To receive chunked response, pass in a callback as last parameter to the constructor.
     HttpRequest* get_req = new HttpRequest(network, HTTP_GET, "http://192.168.101.17:5000/test");

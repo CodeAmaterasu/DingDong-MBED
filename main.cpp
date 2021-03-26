@@ -58,7 +58,6 @@ int main()
             if (rfidReader.PICC_ReadCardSerial()) {
                 for (int i = 0; i < rfidReader.uid.size; i++) {
                     uid[i] = rfidReader.uid.uidByte[i];
-                    //printf(to_string(rfidReader.uid.uidByte[i]).c_str());
                     rfidUid.append(to_string(rfidReader.uid.uidByte[i]));
                 }
             }
@@ -68,7 +67,10 @@ int main()
         // To receive chunked response, pass in a callback as last parameter to the constructor.
         string connectionUrl = "http://192.168.101.19:5000/user?guid=";
         connectionUrl.append(rfidUid);
-        printf(connectionUrl.c_str());
+
+        if (strlen(rfidUid.c_str()) == 0) {
+            continue;
+        }
 
         HttpRequest* get_req = new HttpRequest(network, HTTP_GET, connectionUrl.c_str());
 
@@ -78,19 +80,14 @@ int main()
         {
             oled.clear();
             if (get_res->get_status_code() != 200) {
-                printf("register badge");
                 string requestBody = "{ \"BadgeGuid\":\"";
                 requestBody.append(rfidUid);
                 requestBody.append("\" }");
-                printf(requestBody.c_str());
                 HttpRequest* post_req = new HttpRequest(network, HTTP_POST, "http://192.168.101.19:5000/user/sign");
                 post_req->set_header("Content-Type", "application/json");
                 HttpResponse* post_res = post_req->send(requestBody.c_str(), strlen(requestBody.c_str()));
 
                 if (post_res) {
-                    int statusCode = post_res->get_status_code();
-                    string statusCodePrint = to_string(statusCode);
-                    printf(statusCodePrint.c_str());
                     oled.clear();
                     if (post_res->get_status_code() == 200) {
                         oled.printf("Card registred");
@@ -101,7 +98,6 @@ int main()
 
                 delete post_req;
             } else {
-                printf("open/close door");
                 oled.clear();
                 // TODO: Move Servo
                 MbedJSONValue parser;

@@ -3,11 +3,14 @@
 #include "mbed.h"
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <exception>
 #include <string>
 #include "OLEDDisplay.h"
 #include "http_request.h"
 #include "MbedJSONValue.h"
-#include "Rfid.h"
+#include "MFRC522.h"
+#include "Servo.h"
 
 #define WIFI_SSID "LERNKUBE"
 
@@ -16,11 +19,16 @@
 
 // UI
 OLEDDisplay oled( MBED_CONF_IOTKIT_OLED_RST, MBED_CONF_IOTKIT_OLED_SDA, MBED_CONF_IOTKIT_OLED_SCL );
+MFRC522 rfidReader(MBED_CONF_IOTKIT_RFID_MOSI, MBED_CONF_IOTKIT_RFID_MISO, MBED_CONF_IOTKIT_RFID_SCLK, MBED_CONF_IOTKIT_RFID_SS, MBED_CONF_IOTKIT_RFID_RST);
+Servo servo1 (MBED_CONF_IOTKIT_SERVO2);
+
+bool isDoorOpen = false;
 
 int main()
 {
+    servo1.write(1.0f);
     oled.clear();
-    
+    rfidReader.PCD_Init();
     // Connect to the network with the default networking interface
     // if you use WiFi: see mbed_app.json for the credentials
     WiFiInterface* network = WiFiInterface::get_default_instance();
@@ -41,33 +49,76 @@ int main()
     SocketAddress a;
     network->get_ip_address(&a);
     printf("IP: %s\n", a.get_ip_address());    
-    Rfid rfid = Rfid();
-    rfid.readData();
-    // By default the body is automatically parsed and stored in a buffer, this is memory heavy.
-    // To receive chunked response, pass in a callback as last parameter to the constructor.
-    HttpRequest* get_req = new HttpRequest(network, HTTP_GET, "http://192.168.101.17:5000/test");
+    
+    // Event loop
+    while (true) {
+        string rfidUid = "";
+        char uid[10] = {};
+        if (rfidReader.PICC_IsNewCardPresent()) {
+            if (rfidReader.PICC_ReadCardSerial()) {
+                for (int i = 0; i < rfidReader.uid.size; i++) {
+                    uid[i] = rfidReader.uid.uidByte[i];
+                    rfidUid.append(to_string(rfidReader.uid.uidByte[i]));
+                }
+            }
+        }
 
-    HttpResponse* get_res = get_req->send();
-    // OK
-    if ( get_res )
-    {
-        MbedJSONValue parser;
-        // HTTP GET (JSON) parsen  
-        parse( parser, get_res->get_body_as_string().c_str() );
-        std::string data = parser["message"].get<std::string>();
+        // By default the body is automatically parsed and stored in a buffer, this is memory heavy.
+        // To receive chunked response, pass in a callback as last parameter to the constructor.
+        string connectionUrl = "http://192.168.101.19:5000/user?guid=";
+        connectionUrl.append(rfidUid);
 
-        oled.printf("%s", data.c_str());
-        printf("%s", data.c_str());
+        if (strlen(rfidUid.c_str()) == 0) {
+            continue;
+        }
 
+        HttpRequest* get_req = new HttpRequest(network, HTTP_GET, connectionUrl.c_str());
+
+        HttpResponse* get_res = get_req->send();
+        // OK
+        if ( get_res )
+        {
+            oled.clear();
+            if (get_res->get_status_code() != 200) {
+                string requestBody = "{ \"BadgeGuid\":\"";
+                requestBody.append(rfidUid);
+                requestBody.append("\" }");
+                HttpRequest* post_req = new HttpRequest(network, HTTP_POST, "http://192.168.101.19:5000/user/sign");
+                post_req->set_header("Content-Type", "application/json");
+                HttpResponse* post_res = post_req->send(requestBody.c_str(), strlen(requestBody.c_str()));
+
+                if (post_res) {
+                    oled.clear();
+                    if (post_res->get_status_code() == 200) {
+                        oled.printf("Card registred");
+                    } else {
+                        oled.printf("Card could not be registred");
+                    }
+                }
+
+                delete post_req;
+            } else {
+                oled.clear();
+                // TODO: Move Servo
+                MbedJSONValue parser;
+                if (isDoorOpen) {
+                    servo1.write(1.0f);
+                    oled.printf("Door is closed");
+                    isDoorOpen = false;
+                } else {
+                    servo1.write(0.0f);
+                    oled.printf("Door is opened");
+                    isDoorOpen = true;
+                }
+            }
+
+        } else {
+            printf("HttpRequest failed (error code %d)\n", get_req->get_error());
+            return 1;
+        }
+        delete get_req;
         thread_sleep_for(1000);
-
     }
-    // Error
-    else
-    {
-        printf("HttpRequest failed (error code %d)\n", get_req->get_error());
-        return 1;
-    }
-    delete get_req;
 
+    
 }

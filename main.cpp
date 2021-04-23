@@ -11,6 +11,9 @@
 #include "MbedJSONValue.h"
 #include "MFRC522.h"
 #include "Servo.h"
+#include "MQTTNetwork.h"
+#include "MQTTmbed.h"
+#include "MQTTClient.h"
 
 #define WIFI_SSID "LERNKUBE"
 
@@ -23,6 +26,43 @@ MFRC522 rfidReader(MBED_CONF_IOTKIT_RFID_MOSI, MBED_CONF_IOTKIT_RFID_MISO, MBED_
 Servo servo1 (MBED_CONF_IOTKIT_SERVO2);
 
 bool isDoorOpen = false;
+
+// Topics for publishing
+string authTopic = "iotkit/danilo/auth";
+string authResponseTopic = "iotkit/danilo/auth/response";
+string registerBadgeTopic = "iotkit/danilo/registerBadge";
+string registerBadgeResponseTopic = "iotkit/danilo/registerBadge/response";
+
+// MQTT stuff
+string hostname = "cloud.tbz.ch";
+int port = 1883;
+MQTT::Message message;
+int responseStatusCode = 0;
+
+
+void publish( MQTTNetwork &mqttNetwork, MQTT::Client<MQTTNetwork, Countdown> &client, string topic, string payload )
+{
+    printf("Publishing");
+    MQTT::Message message;    
+
+    message.qos = MQTT::QOS0;
+    message.retained = false;
+    message.dup = false;
+    message.payload = (void*) payload.c_str();
+    message.payloadlen = strlen(payload.c_str())+1;
+    client.publish( topic.c_str(), message);  
+}
+
+/**
+ *  
+ *  Callback for incoming messages from broker
+ *
+ */
+void messageArrived( MQTT::MessageData& md ) {
+    printf("CAllback called");
+    message = md.message;
+    responseStatusCode = (int) message.payload;
+}
 
 int main()
 {
@@ -48,10 +88,22 @@ int main()
     printf("MAC: %s\n", network->get_mac_address());
     SocketAddress a;
     network->get_ip_address(&a);
-    printf("IP: %s\n", a.get_ip_address());    
-    
+    printf("IP: %s\n", a.get_ip_address());   
+
+    MQTTNetwork mqttNetwork( network );
+    MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
+
+    int rc = mqttNetwork.connect(hostname.c_str(), port);
+
+    client.subscribe("iotkit/danilo/auth/response", MQTT::QOS0, messageArrived);
+    client.subscribe(registerBadgeResponseTopic.c_str(), MQTT::QOS0, messageArrived);
+    string test = "234320";
+    publish(mqttNetwork, client, authTopic, test);
     // Event loop
     while (true) {
+        responseStatusCode = 0;
+        
+
         string rfidUid = "";
         char uid[10] = {};
         if (rfidReader.PICC_IsNewCardPresent()) {
@@ -63,44 +115,17 @@ int main()
             }
         }
 
-        // By default the body is automatically parsed and stored in a buffer, this is memory heavy.
-        // To receive chunked response, pass in a callback as last parameter to the constructor.
-        string connectionUrl = "http://192.168.101.19:5000/user?guid=";
-        connectionUrl.append(rfidUid);
-
         if (strlen(rfidUid.c_str()) == 0) {
             continue;
         }
 
-        HttpRequest* get_req = new HttpRequest(network, HTTP_GET, connectionUrl.c_str());
-
-        HttpResponse* get_res = get_req->send();
-        // OK
-        if ( get_res )
-        {
-            oled.clear();
-            if (get_res->get_status_code() != 200) {
-                string requestBody = "{ \"BadgeGuid\":\"";
-                requestBody.append(rfidUid);
-                requestBody.append("\" }");
-                HttpRequest* post_req = new HttpRequest(network, HTTP_POST, "http://192.168.101.19:5000/user/sign");
-                post_req->set_header("Content-Type", "application/json");
-                HttpResponse* post_res = post_req->send(requestBody.c_str(), strlen(requestBody.c_str()));
-
-                if (post_res) {
-                    oled.clear();
-                    if (post_res->get_status_code() == 200) {
-                        oled.printf("Card registred");
-                    } else {
-                        oled.printf("Card could not be registred");
-                    }
-                }
-
-                delete post_req;
-            } else {
+        //publish(mqttNetwork, client, authTopic, rfidUid);
+        printf("Published");
+        do {
+            if (responseStatusCode == 200) {
+                printf("Auth successfull\n");
                 oled.clear();
-                // TODO: Move Servo
-                MbedJSONValue parser;
+
                 if (isDoorOpen) {
                     servo1.write(1.0f);
                     oled.printf("Door is closed");
@@ -110,14 +135,29 @@ int main()
                     oled.printf("Door is opened");
                     isDoorOpen = true;
                 }
+            } else if (responseStatusCode == 400) {
+                printf("Auth failing\n");
+                string requestBody = "{ \"BadgeGuid\":\"";
+                requestBody.append(rfidUid);
+                requestBody.append("\" }");
+
+                publish(mqttNetwork, client, registerBadgeTopic, rfidUid);
+                printf("Registering Badge request\n");
+                do {
+                     if (responseStatusCode == 200) {
+                        printf("Card registred\n");
+                        oled.clear();
+                        oled.printf("Card registred\n");
+                    } else {
+                        printf("Couldn't register card");
+                        oled.printf("Card could not be registred");
+                    }
+                } while (responseStatusCode == 0);
+                
             }
 
-        } else {
-            printf("HttpRequest failed (error code %d)\n", get_req->get_error());
-            return 1;
-        }
-        delete get_req;
-        thread_sleep_for(1000);
+        } while (responseStatusCode == 0);
+        responseStatusCode = 0;
     }
 
     
